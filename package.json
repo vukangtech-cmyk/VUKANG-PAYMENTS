@@ -4,6 +4,9 @@
   "private": true,
   "description": "Local academic prototype for recording and monitoring simulated asset transactions",
   "scripts": {
+    "dev": "node backend/server.js",
+    "build": "hardhat compile",
+    "start": "node backend/server.js",
     "compile": "hardhat compile",
     "test": "hardhat test",
     "chain": "hardhat node",
