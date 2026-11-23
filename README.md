@@ -1,89 +1,103 @@
-# Blockchain-Based Digital Asset Transaction Verification and Monitoring
+# Vukang Payments
 
-A local academic prototype that records **simulated transaction metadata** on a Hardhat blockchain, verifies records by ID, and displays event-based history in a browser dashboard. It does **not** transfer tokens, custody assets, or provide production security.
+**Design and Development of a Blockchain-Based Digital Asset Transaction Verification and Monitoring System**
 
-## Requirements
+An academic prototype. It runs a real smart contract on a local Ethereum-compatible blockchain (Hardhat). Digital assets (VKC) are issued and transferred on that chain with enforced balances, and every transaction can be verified, traced, monitored and reported on.
 
-- Node.js 20 or newer (the project was prepared in a Node 24 environment)
-- npm
-- Terminal access
+> Research problem: how can blockchain technology support transparent verification, traceability and monitoring of digital asset transactions?
 
-## Project locations
+## What it does
 
-```text
-blockchain-asset-monitor/
-├── contracts/AssetTransactionRegistry.sol  # on-chain transaction registry
-├── scripts/deploy.js                       # deploys contract to local chain
-├── test/AssetTransactionRegistry.test.js   # smart-contract tests
-├── backend/server.js                       # local-only API and static web server
-├── public/index.html                       # dashboard
-├── public/app.js                            # dashboard behavior
-├── public/styles.css                        # dashboard styling
-├── deployments/localhost.json               # generated contract address
-├── hardhat.config.js
-├── package.json
-└── .env.example
+| Contribution | How the prototype delivers it |
+| --- | --- |
+| Transaction verification | Each record stores a keccak256 hash of its own data plus the hash of the record before it. A record is checked four ways: by the contract, by an independent recalculation on the server, by its link to the previous record, and by the timestamp of the block that holds it. Lookup works by record ID, transaction hash or record hash. |
+| Transaction history management | Every issue and transfer is an on-chain record with sender, recipient, amount, memo, time and block. The dashboard filters by type, account, review status and text. |
+| Reporting | Totals, volume per hour or day, per-account sent, received and net, flagged records, CSV export and a print layout. |
+| Monitoring | The contract flags any transfer at or above a configurable threshold. The audit desk can flag a record by hand and freeze accounts. |
+
+The transfers are real as far as the chain is concerned: balances change, an overdraft is rejected by the contract, a frozen account cannot send or receive, and records cannot be altered or deleted through the contract. VKC is a teaching asset with no monetary value.
+
+## How the hash chain works
+
+```
+Record 1                Record 2                Record 3
+prevHash = 0x00…        prevHash = hash(1)      prevHash = hash(2)
+hash(1) = keccak256(    hash(2) = keccak256(    hash(3) = keccak256(
+  id, kind, from, to,     id, kind, from, to,     …
+  amount, memo, time,     amount, memo, time,
+  block, prevHash)        block, prevHash)
 ```
 
-## Setup and run
+Changing any field of any record changes its hash and breaks every link after it. The dashboard's "Try changing this record" panel shows this by recalculating a hash with an edited amount. Flags are stored beside the record but are not part of the hash, so flagging never alters the evidence.
 
-Open a terminal in the project folder:
+## Architecture
+
+```
+Browser dashboard  ──HTTP──▶  Express API  ──JSON-RPC──▶  Hardhat node (chain 31337)
+public/                       backend/                     VukangLedger.sol
+```
+
+- `contracts/VukangLedger.sol`: balances, mint, transfer, hash-linked records, flags, freezes, `verifyRecord`, `verifyChain`.
+- `backend/`: API, chain connection, demo data, report and CSV builders.
+- `public/`: dashboard with six pages (Overview, Send, Verify, History, Monitoring, Reports).
+- `test/VukangLedger.test.js`: 16 contract tests.
+
+## Run it
+
+Requires Node.js 20 or newer.
 
 ```bash
-cd /data/blockchain-asset-monitor
 npm install
-cp .env.example .env
-npm run compile
-npm test
+npm test        # contract tests
+npm start       # starts the chain if needed, deploys the contract, loads demo data
 ```
 
-Start the local blockchain in **Terminal 1** and leave it running:
+Open <http://127.0.0.1:3000>.
 
-```bash
-cd /data/blockchain-asset-monitor
-npm run chain
-```
+If you prefer to see the chain in its own terminal, run `npm run chain` first and `npm start` in a second one. The server detects the running chain and uses it.
 
-In **Terminal 2**, deploy the contract to that local chain:
+The contract compiles with the bundled `solc` package, so no compiler download is needed.
 
-```bash
-cd /data/blockchain-asset-monitor
-npm run deploy:local
-```
+### Settings
 
-In **Terminal 3**, start the dashboard and API:
+Copy `.env.example` to `.env` to change them.
 
-```bash
-cd /data/blockchain-asset-monitor
-npm run api
-```
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `PORT` | `3000` | Dashboard port |
+| `RPC_URL` | `http://127.0.0.1:8545` | Chain endpoint (local only) |
+| `ALERT_THRESHOLD` | `1000` | Transfers of this size or more are flagged on a new deployment |
+| `AUTO_SEED` | `true` | Load demo accounts and transfers into an empty ledger. Set to `false` for a blank start. |
 
-Open `http://127.0.0.1:3000`. Enter a recipient address from the accounts printed by `npm run chain`, an asset label such as `DEMO`, and a whole-number amount. The API submits the record using Hardhat's first disposable local account. The dashboard then displays its ID, verifies it, and reads the transaction history.
+## API
 
-## Integration map
+| Method and path | Purpose |
+| --- | --- |
+| `GET /api/status` | Chain, contract, supply, record count, full-chain integrity |
+| `GET /api/blocks?limit=` | Latest blocks with hashes |
+| `GET /api/accounts` | Demo accounts with balances and frozen state |
+| `GET /api/records` | History. Filters: `kind`, `flagged`, `account`, `q`, `limit`, `offset` |
+| `GET /api/records/:id` | One record with its four verification checks |
+| `GET /api/verify?q=` | Verify by ID, transaction hash or record hash |
+| `POST /api/transfer` | `{ from, to, amount, memo }` |
+| `POST /api/mint` | `{ to, amount, memo }` (treasury only) |
+| `POST /api/records/:id/flag` | `{ reason }` (audit desk) |
+| `POST /api/accounts/:index/freeze` | `{ frozen }` (audit desk) |
+| `POST /api/records/:id/tamper-check` | What-if hash recalculation. Changes nothing. |
+| `GET /api/report` and `/api/report.csv` | Summary and export. Optional `from` and `to` dates. |
 
-- **Hardhat local blockchain** — JSON-RPC at `http://127.0.0.1:8545`, chain ID `31337`.
-- **Solidity smart contract** — validates input and stores transaction metadata.
-- **Express API** — connects the dashboard to the local node and contract.
-- **Browser dashboard** — records, verifies, and monitors simulated transactions.
+## Limits of this prototype
 
-MetaMask is not required for this first version. The API uses a disposable account unlocked by the local Hardhat node. Do not change the RPC URL to a public network or enter real keys or real asset data.
+- It runs on a local development chain. The chain resets when the node stops, and the server reloads demo data on the next start. A public network would need a funded wallet, which this project deliberately does not use.
+- The server signs transactions with the disposable accounts that Hardhat unlocks locally. A production design would have each user sign with their own wallet, for example MetaMask.
+- The API accepts requests only from the same computer and refuses any chain other than ID 31337. There is no login. Do not expose it to a network.
+- A blockchain makes records tamper-evident. It does not prove that what was recorded is true.
+- This is not audited and is not suitable for real funds or personal data.
 
-## API endpoints
+## Possible next steps
 
-- `GET /api/health` — local chain and contract status.
-- `GET /api/transactions` — newest-first event history.
-- `GET /api/transactions/:id` — verifies and retrieves a record.
-- `POST /api/transactions` — records `{ "to": "0x...", "asset": "DEMO", "amount": "25" }`.
+Wallet signing in the browser, a public testnet deployment, per-role logins, and persistent chain storage.
 
-## Reset the demo
+## Licence
 
-Stop the Hardhat node with `Ctrl+C`. Starting `npm run chain` again creates a fresh local chain; deploy the contract again with `npm run deploy:local`. Existing local records are intentionally not persistent across a fresh chain.
-
-## Limitations and safety
-
-- Records are metadata demonstrations only. No token or cryptocurrency moves.
-- Local chain state is temporary and resets when the Hardhat node is restarted.
-- Blockchain immutability does not prove that submitted information is true; it only makes recorded data tamper-evident within this prototype.
-- The API is bound to `127.0.0.1` and checks for chain ID `31337`. Keep these safeguards.
-- This is not audited and is not suitable for production, public deployment, real funds, or personal/confidential information.
+MIT

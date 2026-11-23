@@ -1,19 +1,19 @@
 {
-  "name": "blockchain-asset-monitor",
+  "name": "vukang-payments",
   "version": "1.0.0",
   "private": true,
-  "description": "Local academic prototype for recording and monitoring simulated asset transactions",
+  "description": "Blockchain-based digital asset transaction verification and monitoring system (academic prototype)",
   "scripts": {
-    "dev": "node backend/server.js",
-    "build": "hardhat compile",
-    "start": "node backend/server.js",
     "compile": "hardhat compile",
     "test": "hardhat test",
     "chain": "hardhat node",
-    "deploy:local": "hardhat run scripts/deploy.js --network localhost",
+    "start": "node backend/server.js",
+    "dev": "node backend/server.js",
     "api": "node backend/server.js"
   },
   "dependencies": {
+    "@fontsource/jetbrains-mono": "5.3.0",
+    "@fontsource/schibsted-grotesk": "5.3.0",
     "dotenv": "16.4.5",
     "ethers": "6.13.4",
     "express": "4.21.2"
@@ -22,6 +22,7 @@
     "@nomicfoundation/hardhat-chai-matchers": "2.0.8",
     "@nomicfoundation/hardhat-ethers": "3.0.8",
     "chai": "4.5.0",
-    "hardhat": "2.26.3"
+    "hardhat": "2.26.3",
+    "solc": "0.8.24"
   }
 }

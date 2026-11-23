@@ -1,162 +1,44 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Blockchain-Based Digital Asset Transaction Verification and Monitoring</title>
-    <link rel="stylesheet" href="/styles.css" />
-  </head>
-  <body>
-    <header class="page-header">
-      <div class="container">
-        <h1>Blockchain Asset Transaction Monitor</h1>
-        <p class="subtitle">
-          Local academic prototype for recording simulated transaction metadata on a Hardhat
-          blockchain, verifying records by ID, and monitoring event history.
-        </p>
-        <div class="notice">
-          Simulated metadata only. No real tokens, funds, or assets are transferred or custodied.
-        </div>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Vukang Payments ledger</title>
+  <meta name="description" content="Send, verify and monitor digital asset transactions on a local blockchain.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Cpath d=%27M0 0h25l7 7v25H0z%27 fill=%27%232338e6%27/%3E%3Crect x=%279%27 y=%279%27 width=%2714%27 height=%2714%27 rx=%272%27 fill=%27none%27 stroke=%27white%27 stroke-width=%273%27/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <a class="skip" href="#view">Skip to content</a>
+
+  <aside class="rail">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <div>
+        <strong>Vukang</strong>
+        <span>Payments ledger</span>
       </div>
-    </header>
+    </div>
 
-    <main class="container">
-      <section class="card status-card" aria-label="Local Chain Status">
-        <div class="card-header">
-          <h2>Local Chain &amp; Contract Status</h2>
-          <button id="refresh-health-btn" type="button" class="btn btn-secondary">
-            Refresh Status
-          </button>
-        </div>
-        <div id="health-status" class="status-grid">
-          <div class="status-item">
-            <span class="label">Node Status</span>
-            <span id="status-indicator" class="value">Connecting...</span>
-          </div>
-          <div class="status-item">
-            <span class="label">Chain ID</span>
-            <span id="status-chain-id" class="value">—</span>
-          </div>
-          <div class="status-item">
-            <span class="label">Block Number</span>
-            <span id="status-block" class="value">—</span>
-          </div>
-          <div class="status-item">
-            <span class="label">Registry Contract</span>
-            <span id="status-contract" class="value mono">—</span>
-          </div>
-          <div class="status-item">
-            <span class="label">Disposable Signer (#0)</span>
-            <span id="status-signer" class="value mono">—</span>
-          </div>
-        </div>
-      </section>
+    <nav class="nav" aria-label="Main">
+      <a href="#overview" data-route="overview">Overview</a>
+      <a href="#send" data-route="send">Send</a>
+      <a href="#verify" data-route="verify">Verify</a>
+      <a href="#history" data-route="history">History</a>
+      <a href="#monitor" data-route="monitor">Monitoring</a>
+      <a href="#report" data-route="report">Reports</a>
+    </nav>
 
-      <div class="two-col">
-        <section class="card" aria-label="Record Transaction">
-          <h2>Record Simulated Transaction</h2>
-          <form id="record-form" class="stack">
-            <label class="field">
-              <span>Recipient Address (<code>to</code>)</span>
-              <input
-                id="to-input"
-                name="to"
-                type="text"
-                placeholder="0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
-                required
-              />
-            </label>
-            <div id="account-presets" class="presets" aria-label="Local Test Accounts"></div>
+    <div class="chain-status" id="chain-status" aria-live="polite">
+      <span class="dot" data-state="wait"></span>
+      <span id="chain-status-text">Connecting to chain</span>
+    </div>
+  </aside>
 
-            <div class="row-fields">
-              <label class="field">
-                <span>Asset Label</span>
-                <input
-                  id="asset-input"
-                  name="asset"
-                  type="text"
-                  maxlength="32"
-                  value="DEMO"
-                  placeholder="DEMO"
-                  required
-                />
-              </label>
+  <main id="view" tabindex="-1"></main>
 
-              <label class="field">
-                <span>Whole-Number Amount</span>
-                <input
-                  id="amount-input"
-                  name="amount"
-                  type="number"
-                  min="1"
-                  step="1"
-                  value="25"
-                  required
-                />
-              </label>
-            </div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-            <button id="submit-tx-btn" type="submit" class="btn btn-primary">
-              Record Transaction
-            </button>
-          </form>
-          <div id="record-feedback" class="feedback" hidden></div>
-        </section>
-
-        <section class="card" aria-label="Verify Transaction">
-          <h2>Verify Record by ID</h2>
-          <form id="verify-form" class="verify-row">
-            <label class="field verify-input">
-              <span>Transaction ID</span>
-              <input
-                id="verify-id-input"
-                name="id"
-                type="number"
-                min="1"
-                step="1"
-                placeholder="1"
-                required
-              />
-            </label>
-            <button type="submit" class="btn btn-secondary">Verify ID</button>
-          </form>
-          <div id="verify-result" class="verify-result">
-            Enter a transaction ID or click an ID from the history table below to verify its
-            on-chain record.
-          </div>
-        </section>
-      </div>
-
-      <section class="card" aria-label="Transaction History">
-        <div class="card-header">
-          <h2>Event-Based Transaction History</h2>
-          <button id="refresh-history-btn" type="button" class="btn btn-secondary">
-            Refresh History
-          </button>
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Asset</th>
-                <th>Amount</th>
-                <th>From</th>
-                <th>To</th>
-                <th>Recorded At</th>
-                <th>Tx Hash</th>
-              </tr>
-            </thead>
-            <tbody id="history-body">
-              <tr>
-                <td colspan="7" class="empty-cell">Loading transactions...</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-    </main>
-
-    <script src="/app.js"></script>
-  </body>
+  <script src="/app.js"></script>
+</body>
 </html>
