@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Digital Asset Transaction Monitor</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <p class="eyebrow">ACADEMIC PROTOTYPE · LOCAL NETWORK ONLY</p>
+      <h1>Digital Asset Transaction Monitor</h1>
+      <p class="lede">Record, verify, and review simulated asset transactions on a local blockchain.</p>
+    </header>
+
+    <section class="status-card" aria-live="polite">
+      <span class="status-dot"></span><strong id="connection">Checking local chain…</strong>
+      <span id="chain-detail" class="muted"></span>
+    </section>
+
+    <div class="grid">
+      <section class="card">
+        <h2>Record a transaction</h2>
+        <p class="muted">The local development account submits this simulated record. No asset is transferred.</p>
+        <form id="transaction-form">
+          <label for="to">Recipient address</label>
+          <input id="to" name="to" placeholder="0x…" required autocomplete="off">
+          <label for="asset">Asset label <span class="muted">(up to 32 bytes)</span></label>
+          <input id="asset" name="asset" value="DEMO" maxlength="32" required>
+          <label for="amount">Amount <span class="muted">(whole number)</span></label>
+          <input id="amount" name="amount" inputmode="numeric" pattern="[1-9][0-9]*" placeholder="25" required>
+          <button type="submit">Record transaction</button>
+          <p id="form-message" class="message" role="status"></p>
+        </form>
+      </section>
+
+      <section class="card">
+        <h2>Verify by transaction ID</h2>
+        <form id="verify-form" class="inline-form">
+          <input id="verify-id" inputmode="numeric" pattern="[0-9]+" placeholder="e.g. 1" aria-label="Transaction ID" required>
+          <button type="submit">Verify</button>
+        </form>
+        <p id="verify-result" class="message" role="status"></p>
+        <div class="note"><strong>Prototype boundary</strong><br>Records are for demonstration only. Do not use real funds, private data, or production keys.</div>
+      </section>
+    </div>
+
+    <section class="card history-card">
+      <div class="section-heading"><div><h2>Transaction history</h2><p class="muted">Read from the local blockchain event log.</p></div><button id="refresh" class="secondary" type="button">Refresh</button></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>ID</th><th>Asset</th><th>Amount</th><th>From</th><th>To</th><th>Recorded</th></tr></thead>
+          <tbody id="history"><tr><td colspan="6" class="muted">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+    <footer>Local academic demonstration · Hardhat chain ID 31337</footer>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>
