@@ -265,7 +265,11 @@ function friendlyError(error) {
 
 // -------------------------------------------------------------- operations
 
-async function send(signerIndex, method, args) {
+// "transfer" exists twice on the contract (ERC-20 form and memo form), so name the memo form in full.
+const METHOD_ALIASES = { transfer: "transfer(address,uint256,string)" };
+
+async function send(signerIndex, methodName, args) {
+  const method = METHOD_ALIASES[methodName] || methodName;
   return enqueue(async () => {
     const signer = await provider.getSigner(signerIndex);
     const contract = new ethers.Contract(readContract.target, abi, signer);
@@ -293,6 +297,7 @@ const api = {
   get accounts() { return ACCOUNTS; },
   get addresses() { return accountAddresses; },
   get contract() { return readContract; },
+  get abi() { return abi; },
   get provider() { return provider; },
   KINDS,
   ALERT_THRESHOLD,

@@ -6,6 +6,14 @@ const chain = require("./chain");
 const { buildReport, toCsv } = require("./report");
 
 const PORT = Number(process.env.PORT || 3000);
+// Demo mode lets the server sign for the built-in demo accounts, so the dashboard works
+// without a wallet. Set DEMO_MODE=false and the server only reads: every write must be
+// signed in the user's own wallet.
+const DEMO_MODE = process.env.DEMO_MODE !== "false";
+const FAUCET_AMOUNT = BigInt(process.env.FAUCET_AMOUNT || "500");
+const FAUCET_MIN_BALANCE = 100n;
+const FAUCET_COOLDOWN_MS = 30_000;
+const RPC_PUBLIC_URL = process.env.RPC_PUBLIC_URL || "http://127.0.0.1:8545";
 // Local only on purpose: the API signs with disposable development accounts.
 const HOST = "127.0.0.1";
 
@@ -22,6 +30,15 @@ app.use((_req, res, next) => {
 
 app.use(express.static(path.join(__dirname, "..", "public")));
 app.use("/fonts", express.static(path.join(__dirname, "..", "node_modules", "@fontsource")));
+// The browser signs with the user's wallet, so it needs the ethers library. Served from this
+// project (not a CDN) to keep the Content-Security-Policy strict.
+app.get("/vendor/ethers.umd.min.js", (_req, res) =>
+  res.sendFile(path.join(__dirname, "..", "node_modules", "ethers", "dist", "ethers.umd.min.js")));
+
+function requireDemo(_req, res, next) {
+  if (DEMO_MODE) return next();
+  res.status(403).json({ error: "Demo mode is off. Connect your wallet and sign this action yourself." });
+}
 
 const wrap = (fn) => async (req, res) => {
   try {
@@ -57,6 +74,71 @@ function parseAccountIndex(value, name) {
   if (!Number.isInteger(i) || !chain.accounts[i]) throw fail(400, `${name} must be one of the listed accounts.`);
   return i;
 }
+
+// ------------------------------------------------------- wallet support
+
+app.get("/api/config", wrap(async (_req, res) => {
+  const network = await chain.provider.getNetwork();
+  res.json({
+    chainId: Number(network.chainId),
+    chainIdHex: "0x" + network.chainId.toString(16),
+    networkName: "Vukang Local (Hardhat)",
+    rpcUrl: RPC_PUBLIC_URL,
+    contract: await chain.contract.getAddress(),
+    abi: chain.abi,
+    asset: { symbol: await chain.contract.symbol(), decimals: Number(await chain.contract.decimals()) },
+    demoMode: DEMO_MODE,
+    faucetAmount: FAUCET_AMOUNT.toString(),
+    alertThreshold: (await chain.contract.alertThreshold()).toString()
+  });
+}));
+
+async function walletInfo(address) {
+  const c = chain.contract;
+  const [owner, balance, frozen, auditor, eth] = await Promise.all([
+    // Raw RPC for the gas balance: it must never come from a short-lived provider cache.
+    c.owner(), c.balanceOf(address), c.isFrozen(address), c.isAuditor(address),
+    chain.provider.send("eth_getBalance", [address, "latest"]).then(BigInt)
+  ]);
+  const role = owner.toLowerCase() === address.toLowerCase() ? "admin" : auditor ? "auditor" : "user";
+  return { address, role, balance: balance.toString(), frozen, ethBalance: ethers.formatEther(eth) };
+}
+
+app.get("/api/wallet/:address", wrap(async (req, res) => {
+  if (!ethers.isAddress(req.params.address)) throw fail(400, "That is not a valid wallet address.");
+  res.json(await walletInfo(ethers.getAddress(req.params.address)));
+}));
+
+// Demo faucet: gives a connected wallet a little VKC and test ETH for gas. The chain check in
+// chain.js guarantees this only ever runs on the local development chain.
+const lastFaucet = new Map();
+app.post("/api/faucet", wrap(async (req, res) => {
+  const raw = req.body?.address;
+  if (typeof raw !== "string" || !ethers.isAddress(raw)) throw fail(400, "Send a valid wallet address.");
+  const address = ethers.getAddress(raw);
+  if (address === ethers.ZeroAddress) throw fail(400, "Send a valid wallet address.");
+
+  const last = lastFaucet.get(address) || 0;
+  if (Date.now() - last < FAUCET_COOLDOWN_MS) throw fail(429, "Wait a few seconds before asking again.");
+
+  const info = await walletInfo(address);
+  if (info.frozen) throw fail(422, "This account is frozen, so it cannot receive VKC.");
+  if (BigInt(info.balance) >= FAUCET_MIN_BALANCE) {
+    throw fail(422, `This wallet already holds ${info.balance} VKC. The faucet only tops up wallets below ${FAUCET_MIN_BALANCE}.`);
+  }
+  lastFaucet.set(address, Date.now());
+
+  // Gas money. hardhat_setBalance exists only on the local Hardhat node.
+  if (Number(info.ethBalance) < 1) {
+    try {
+      await chain.provider.send("hardhat_setBalance", [address, "0x" + (10n * 10n ** 18n).toString(16)]);
+    } catch (_e) {
+      throw fail(503, "This chain cannot fund test ETH for gas. Use the Hardhat node from npm run chain.");
+    }
+  }
+  const receipt = await chain.send(0, "mint", [address, FAUCET_AMOUNT, "Demo faucet"]);
+  res.status(201).json({ id: chain.recordIdFromReceipt(receipt), amount: FAUCET_AMOUNT.toString(), transactionHash: receipt.hash });
+}));
 
 // ------------------------------------------------------------------ status
 
@@ -122,7 +204,7 @@ app.get("/api/accounts", wrap(async (_req, res) => {
   res.json({ accounts: list });
 }));
 
-app.post("/api/accounts/:index/freeze", wrap(async (req, res) => {
+app.post("/api/accounts/:index/freeze", requireDemo, wrap(async (req, res) => {
   const target = parseAccountIndex(req.params.index, "Account");
   const frozen = Boolean(req.body?.frozen);
   const actor = chain.accounts.find((a) => a.role === "auditor")?.index ?? 0;
@@ -225,7 +307,7 @@ app.post("/api/records/:id/tamper-check", wrap(async (req, res) => {
   });
 }));
 
-app.post("/api/records/:id/flag", wrap(async (req, res) => {
+app.post("/api/records/:id/flag", requireDemo, wrap(async (req, res) => {
   if (!/^\d{1,9}$/.test(req.params.id)) throw fail(400, "Record ID must be a whole number.");
   const reason = typeof req.body?.reason === "string" ? req.body.reason.trim() : "";
   if (!reason || Buffer.byteLength(reason, "utf8") > 80) throw fail(400, "Give a reason of 1 to 80 characters.");
@@ -236,7 +318,7 @@ app.post("/api/records/:id/flag", wrap(async (req, res) => {
 
 // --------------------------------------------------------------- transfers
 
-app.post("/api/transfer", wrap(async (req, res) => {
+app.post("/api/transfer", requireDemo, wrap(async (req, res) => {
   const { from, to, amount, memo } = req.body || {};
   const fromIndex = parseAccountIndex(from, "Sender");
   const recipient = chain.resolveAddress(to);
@@ -247,7 +329,7 @@ app.post("/api/transfer", wrap(async (req, res) => {
   res.status(201).json({ id, transactionHash: receipt.hash, blockNumber: receipt.blockNumber, record });
 }));
 
-app.post("/api/mint", wrap(async (req, res) => {
+app.post("/api/mint", requireDemo, wrap(async (req, res) => {
   const { to, amount, memo } = req.body || {};
   const recipient = chain.resolveAddress(to);
   if (!recipient) throw fail(400, "Recipient must be a listed account or a valid address.");

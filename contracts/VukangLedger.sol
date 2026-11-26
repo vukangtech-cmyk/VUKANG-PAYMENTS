@@ -58,6 +58,8 @@ contract VukangLedger {
         string memo,
         bytes32 recordHash
     );
+    /// @dev ERC-20 compatible event so wallets such as MetaMask can follow balances.
+    event Transfer(address indexed from, address indexed to, uint256 value);
     event Flagged(uint256 indexed id, address indexed by, string reason);
     event FrozenChanged(address indexed account, bool frozen, address indexed by);
     event AuditorChanged(address indexed account, bool enabled);
@@ -101,25 +103,15 @@ contract VukangLedger {
         return _append(Kind.Mint, address(0), to, amount, memo);
     }
 
+    /// @notice ERC-20 compatible transfer (no memo). Wallets call this one.
+    function transfer(address to, uint256 amount) external returns (bool) {
+        _transfer(to, amount, "");
+        return true;
+    }
+
+    /// @notice Transfer with a memo. Returns the id of the new record.
     function transfer(address to, uint256 amount, string calldata memo) external returns (uint256) {
-        if (to == address(0)) revert InvalidRecipient();
-        if (to == msg.sender) revert SelfTransfer();
-        if (amount == 0) revert InvalidAmount();
-        if (bytes(memo).length > MAX_MEMO_BYTES) revert InvalidMemo();
-        if (isFrozen[msg.sender]) revert AccountFrozen(msg.sender);
-        if (isFrozen[to]) revert AccountFrozen(to);
-
-        uint256 available = balanceOf[msg.sender];
-        if (available < amount) revert InsufficientBalance(available, amount);
-
-        balanceOf[msg.sender] = available - amount;
-        balanceOf[to] += amount;
-
-        uint256 id = _append(Kind.Transfer, msg.sender, to, amount, memo);
-        if (alertThreshold != 0 && amount >= alertThreshold) {
-            _flag(id, msg.sender, "LARGE_AMOUNT");
-        }
-        return id;
+        return _transfer(to, amount, memo);
     }
 
     function flag(uint256 id, string calldata reason) external onlyAuditor {
@@ -193,12 +185,33 @@ contract VukangLedger {
 
     // -------------------------------------------------------------- internal
 
+    function _transfer(address to, uint256 amount, string memory memo) private returns (uint256) {
+        if (to == address(0)) revert InvalidRecipient();
+        if (to == msg.sender) revert SelfTransfer();
+        if (amount == 0) revert InvalidAmount();
+        if (bytes(memo).length > MAX_MEMO_BYTES) revert InvalidMemo();
+        if (isFrozen[msg.sender]) revert AccountFrozen(msg.sender);
+        if (isFrozen[to]) revert AccountFrozen(to);
+
+        uint256 available = balanceOf[msg.sender];
+        if (available < amount) revert InsufficientBalance(available, amount);
+
+        balanceOf[msg.sender] = available - amount;
+        balanceOf[to] += amount;
+
+        uint256 id = _append(Kind.Transfer, msg.sender, to, amount, memo);
+        if (alertThreshold != 0 && amount >= alertThreshold) {
+            _flag(id, msg.sender, "LARGE_AMOUNT");
+        }
+        return id;
+    }
+
     function _append(
         Kind kind,
         address from,
         address to,
         uint256 amount,
-        string calldata memo
+        string memory memo
     ) private returns (uint256 id) {
         id = _records.length + 1;
 
@@ -218,6 +231,7 @@ contract VukangLedger {
         headHash = r.recordHash;
 
         emit Recorded(id, kind, from, to, amount, memo, r.recordHash);
+        emit Transfer(from, to, amount);
     }
 
     function _flag(uint256 id, address by, string memory reason) private {

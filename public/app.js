@@ -39,7 +39,8 @@ function fill(el, ...nodes) {
 const fmt = (n) => BigInt(n).toLocaleString("en-US");
 const short = (hash, head = 8, tail = 6) => (hash ? `${hash.slice(0, head + 2)}…${hash.slice(-tail)}` : "");
 const shortAddr = (a) => `${a.slice(0, 6)}…${a.slice(-4)}`;
-const who = (label, address) => label || shortAddr(address);
+const who = (label, address) =>
+  Wallet.address && address && address.toLowerCase() === Wallet.address.toLowerCase() ? "You" : label || shortAddr(address);
 
 const timeFmt = new Intl.DateTimeFormat("en-GB", {
   timeZone: "Africa/Dar_es_Salaam", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit"
@@ -241,6 +242,16 @@ async function sendView() {
   function transferForm() {
     const from = h("select", { id: "from" }, accountOptions(accounts, { includeAuditor: false }));
     from.value = "3";
+    const walletMode = Boolean(Wallet.address);
+    const canSign = walletMode || Boolean(Wallet.cfg && Wallet.cfg.demoMode);
+    const walletFrozen = walletMode && Boolean(Wallet.info && Wallet.info.frozen);
+    const fromField = walletMode
+      ? h("div", { class: "static-field", id: "from-wallet" }, h("strong", { text: "Your wallet" }), h("span", { class: "mono", text: Wallet.address }))
+      : from;
+    const signNotice = canSign ? null : h("p", { class: "notice warn", text: "The server is in read-only mode. Connect your wallet in the left panel to send VKC." });
+    const senderInfo = () => (walletMode
+      ? { label: "Your wallet", balance: Wallet.info ? Wallet.info.balance : "0" }
+      : accounts.find((a) => String(a.index) === from.value));
     const to = h("select", { id: "to" });
     const other = h("input", { id: "other", placeholder: "0x…", autocomplete: "off", spellcheck: "false" });
     const otherWrap = h("div", { hidden: true }, h("label", { for: "other", text: "Recipient address" }), other);
@@ -252,7 +263,7 @@ async function sendView() {
 
     function fillRecipients() {
       const keep = to.value;
-      fill(to, ...accountOptions(accounts, { includeAuditor: false, exclude: Number(from.value) }),
+      fill(to, ...accountOptions(accounts, { includeAuditor: false, exclude: walletMode ? undefined : Number(from.value) }),
         h("option", { value: "other", text: "Another address…" }));
       if ([...to.options].some((o) => o.value === keep)) to.value = keep;
       else to.selectedIndex = 0;
@@ -260,7 +271,7 @@ async function sendView() {
     }
 
     function update() {
-      const sender = accounts.find((a) => String(a.index) === from.value);
+      const sender = senderInfo();
       const raw = amount.value.trim();
       const valid = /^[1-9]\d{0,17}$/.test(raw);
       const value = valid ? BigInt(raw) : 0n;
@@ -269,7 +280,7 @@ async function sendView() {
       otherWrap.hidden = to.value !== "other";
 
       amount.setAttribute("aria-invalid", String(Boolean(raw) && (!valid || tooMuch)));
-      submit.disabled = !valid || tooMuch || (to.value === "other" && !/^0x[0-9a-fA-F]{40}$/.test(other.value.trim()));
+      submit.disabled = !canSign || walletFrozen || !valid || tooMuch || (to.value === "other" && !/^0x[0-9a-fA-F]{40}$/.test(other.value.trim()));
 
       fill(preview, 
         h("h2", { text: "What will be recorded" }),
@@ -279,7 +290,8 @@ async function sendView() {
           h("dt", { text: "Amount" }), h("dd", { class: "num", text: valid ? `${fmt(value)} ${SYMBOL}` : "Enter a whole number" }),
           h("dt", { text: "Balance after" }), h("dd", { class: "num", text: valid && !tooMuch ? `${fmt(BigInt(sender.balance) - value)} ${SYMBOL}` : `${fmt(sender.balance)} ${SYMBOL}` })
         ),
-        tooMuch ? h("p", { class: "notice bad", text: `${sender.label} only has ${fmt(sender.balance)} ${SYMBOL}.` }) : null,
+        walletFrozen ? h("p", { class: "notice bad", text: "Your wallet is frozen by the audit desk, so it cannot send or receive VKC." }) : null,
+        tooMuch ? h("p", { class: "notice bad", text: `${sender.label} only has ${fmt(sender.balance)} ${SYMBOL}.${walletMode ? " Use Get demo VKC in the left panel." : ""}` }) : null,
         valid && !tooMuch && value >= threshold
           ? h("p", { class: "notice warn", text: `Transfers of ${fmt(threshold)} ${SYMBOL} or more are flagged automatically for review.` })
           : null
@@ -290,9 +302,16 @@ async function sendView() {
       e.preventDefault();
       error.hidden = true;
       submit.disabled = true;
-      submit.textContent = "Recording on chain";
+      submit.textContent = walletMode ? "Waiting for your wallet" : "Recording on chain";
       try {
-        const result = await api("/transfer", { method: "POST", body: { from: Number(from.value), to: to.value === "other" ? other.value.trim() : Number(to.value), amount: amount.value.trim(), memo: memo.value } });
+        let result;
+        if (walletMode) {
+          const toAddress = to.value === "other" ? other.value.trim() : accounts.find((a) => String(a.index) === to.value).address;
+          result = await Wallet.send("transfer", [toAddress, BigInt(amount.value.trim()), memo.value.trim()]);
+          if (result.id) result.record = (await api(`/records/${result.id}`)).record;
+        } else {
+          result = await api("/transfer", { method: "POST", body: { from: Number(from.value), to: to.value === "other" ? other.value.trim() : Number(to.value), amount: amount.value.trim(), memo: memo.value } });
+        }
         toast(`Payment recorded in block ${result.blockNumber}`);
         accounts = await loadAccounts();
         const keepFrom = from.value;
@@ -311,11 +330,12 @@ async function sendView() {
         update();
       }
     } },
-      h("div", {}, h("label", { for: "from", text: "From" }), from),
+      h("div", {}, h("label", { for: "from", text: "From" }), fromField),
       h("div", {}, h("label", { for: "to", text: "To" }), to),
       otherWrap,
       h("div", {}, h("label", { for: "amount", text: `Amount in ${SYMBOL}` }), amount, h("p", { class: "hint", text: "Whole numbers only. The contract checks the sender's balance." })),
       h("div", {}, h("label", { for: "memo", text: "Memo (optional)" }), memo),
+      signNotice,
       error,
       h("div", { class: "actions" }, submit)
     );
@@ -329,12 +349,17 @@ async function sendView() {
   }
 
   function issueForm() {
-    const to = h("select", { id: "mint-to" }, accountOptions(accounts, { includeAuditor: false }));
+    const walletMode = Boolean(Wallet.address);
+    const isAdmin = walletMode ? Boolean(Wallet.info && Wallet.info.role === "admin") : Boolean(Wallet.cfg && Wallet.cfg.demoMode);
+    const adminNotice = isAdmin ? null : h("p", { class: "notice warn", text: walletMode
+      ? `Only the treasury wallet can issue VKC. Your wallet is registered as ${Wallet.info ? Wallet.info.role : "a user"}.`
+      : "The server is in read-only mode. Connect the treasury wallet to issue VKC." });
+    const to = h("select", { id: "mint-to" }, walletMode ? h("option", { value: "me", text: "Your wallet" }) : null, accountOptions(accounts, { includeAuditor: false }));
     const amount = h("input", { id: "mint-amount", inputmode: "numeric", autocomplete: "off", placeholder: "5000" });
     const memo = h("input", { id: "mint-memo", maxlength: "80", autocomplete: "off", placeholder: "Reason for issuing" });
     const error = h("div", { class: "notice bad", hidden: true, role: "alert" });
     const submit = h("button", { class: "btn", type: "submit", text: `Issue ${SYMBOL}`, disabled: true });
-    amount.addEventListener("input", () => { submit.disabled = !/^[1-9]\d{0,17}$/.test(amount.value.trim()); });
+    amount.addEventListener("input", () => { submit.disabled = !isAdmin || !/^[1-9]\d{0,17}$/.test(amount.value.trim()); });
     fill(side, h("div", { class: "panel" },
       h("h2", { text: "About issuing" }),
       h("p", { text: "Issuing creates new VKC and increases total supply. Only the treasury account can do it, and the contract rejects everyone else. Each issue is recorded in the chain like a transfer." }),
@@ -345,7 +370,13 @@ async function sendView() {
       error.hidden = true;
       submit.disabled = true;
       try {
-        const result = await api("/mint", { method: "POST", body: { to: Number(to.value), amount: amount.value.trim(), memo: memo.value } });
+        let result;
+        if (walletMode) {
+          const toAddress = to.value === "me" ? Wallet.address : accounts.find((a) => String(a.index) === to.value).address;
+          result = await Wallet.send("mint", [toAddress, BigInt(amount.value.trim()), memo.value.trim()]);
+        } else {
+          result = await api("/mint", { method: "POST", body: { to: Number(to.value), amount: amount.value.trim(), memo: memo.value } });
+        }
         toast(`Issued in block ${result.blockNumber}`);
         accounts = await loadAccounts();
         state.status = await api("/status");
@@ -360,6 +391,7 @@ async function sendView() {
       h("div", {}, h("label", { for: "mint-to", text: "Issue to" }), to),
       h("div", {}, h("label", { for: "mint-amount", text: `Amount in ${SYMBOL}` }), amount),
       h("div", {}, h("label", { for: "mint-memo", text: "Memo (optional)" }), memo),
+      adminNotice,
       error,
       h("div", { class: "actions" }, submit)
     );
@@ -562,15 +594,25 @@ async function historyView() {
 async function monitorView() {
   const [accounts, flaggedData, status] = await Promise.all([loadAccounts(), api("/records?flagged=true&limit=100"), api("/status")]);
 
+  const walletMode = Boolean(Wallet.address);
+  const canAudit = walletMode
+    ? Boolean(Wallet.info && ["admin", "auditor"].includes(Wallet.info.role))
+    : Boolean(Wallet.cfg && Wallet.cfg.demoMode);
   const idInput = h("input", { id: "flag-id", inputmode: "numeric", placeholder: "12" });
   const reason = h("input", { id: "flag-reason", maxlength: "80", placeholder: "Why does this need review?" });
-  const flagBtn = h("button", { class: "btn", type: "submit", text: "Flag record" });
+  const flagBtn = h("button", { class: "btn", type: "submit", text: "Flag record", disabled: !canAudit });
 
   const flagForm = h("form", { class: "form", novalidate: true, onsubmit: async (e) => {
     e.preventDefault();
     flagBtn.disabled = true;
     try {
-      await api(`/records/${encodeURIComponent(idInput.value.trim())}/flag`, { method: "POST", body: { reason: reason.value } });
+      if (walletMode) {
+        if (!/^\d{1,9}$/.test(idInput.value.trim())) throw new Error("Record ID must be a whole number.");
+        if (!reason.value.trim()) throw new Error("Give a reason of 1 to 80 characters.");
+        await Wallet.send("flag", [BigInt(idInput.value.trim()), reason.value.trim()]);
+      } else {
+        await api(`/records/${encodeURIComponent(idInput.value.trim())}/flag`, { method: "POST", body: { reason: reason.value } });
+      }
       toast(`Record ${idInput.value.trim()} flagged`);
       monitorView();
     } catch (err) {
@@ -587,6 +629,9 @@ async function monitorView() {
 
   fill(view, 
     ...pageHead("Monitoring", `The contract flags any transfer of ${fmt(status.alertThreshold)} ${SYMBOL} or more. The audit desk can also flag a record by hand or freeze an account.`),
+    canAudit ? null : h("p", { class: "notice warn", text: walletMode
+      ? "Your wallet has no audit rights, so flagging and freezing are turned off. Everyone can still read flagged records."
+      : "The server is in read-only mode. Connect an audit wallet to flag records or freeze accounts." }),
     h("div", { class: "split" },
       h("section", {},
         h("h2", { text: `Flagged records (${flaggedData.total})` }),
@@ -605,10 +650,11 @@ async function monitorView() {
         h("li", { class: "row" },
           h("div", { class: "title", text: a.label }),
           h("div", { class: "side" }, h("button", {
-            class: "btn small " + (a.frozen ? "ghost" : "danger"), type: "button", text: a.frozen ? "Unfreeze" : "Freeze",
+            class: "btn small " + (a.frozen ? "ghost" : "danger"), type: "button", text: a.frozen ? "Unfreeze" : "Freeze", disabled: !canAudit,
             onclick: async () => {
               try {
-                await api(`/accounts/${a.index}/freeze`, { method: "POST", body: { frozen: !a.frozen } });
+                if (walletMode) await Wallet.send("setFrozen", [a.address, !a.frozen]);
+                else await api(`/accounts/${a.index}/freeze`, { method: "POST", body: { frozen: !a.frozen } });
                 toast(`${a.label} ${a.frozen ? "unfrozen" : "frozen"}`);
                 monitorView();
               } catch (err) {
@@ -728,6 +774,7 @@ async function route() {
     else a.removeAttribute("aria-current");
   });
   try {
+    await Wallet.loadConfig().catch(() => {});
     await routes[key](decodeURIComponent(rest.join("/")));
   } catch (err) {
     fill(view, h("h1", { text: "The ledger is not responding" }), h("p", { class: "notice bad", role: "alert", text: err.message }),
@@ -743,6 +790,7 @@ async function pollStatus() {
     const s = await api("/status");
     const changed = state.status && s.blockNumber !== state.status.blockNumber;
     state.status = s;
+    if (!Wallet.cfg) Wallet.loadConfig().then(renderWalletBox).catch(() => {});
     dot.dataset.state = s.chainIntact ? "ok" : "bad";
     text.textContent = s.chainIntact ? `Chain live, block ${s.blockNumber}` : `Chain broken at record ${s.firstBrokenId}`;
     if (changed && (location.hash === "" || location.hash === "#overview")) overviewView();
@@ -752,7 +800,75 @@ async function pollStatus() {
   }
 }
 
+/* ------------------------------------------------------------- wallet panel */
+const ROLE_LABEL = { admin: "Treasury", auditor: "Audit desk", user: "User" };
+
+function renderWalletBox() {
+  const box = document.getElementById("wallet-box");
+  const cfg = Wallet.cfg;
+  const act = (fn, done) => async (e) => {
+    const button = e.currentTarget;
+    button.disabled = true;
+    try {
+      const outcome = await fn();
+      if (done) toast(typeof done === "function" ? done(outcome) : done);
+    } catch (err) {
+      toast(err.message, "bad");
+    } finally {
+      button.disabled = false;
+    }
+  };
+
+  if (!cfg) {
+    // Nothing to click until the chain settings are known, so a click is never lost to a re-render.
+    fill(box, h("strong", { text: "Wallet" }), h("p", { text: "Loading chain settings…" }));
+    return;
+  }
+
+  if (!Wallet.available) {
+    fill(box,
+      h("strong", { text: "Wallet" }),
+      h("p", { text: "No wallet found in this browser. Install MetaMask to sign your own transactions." }),
+      h("a", { href: "https://metamask.io/download/", target: "_blank", rel: "noopener noreferrer", text: "Get MetaMask" }));
+    return;
+  }
+
+  if (!Wallet.address) {
+    fill(box,
+      h("strong", { text: "Wallet" }),
+      h("p", { text: cfg && cfg.demoMode ? "Not connected. Demo accounts sign for you until you connect." : "Not connected. Connect to send VKC." }),
+      h("button", { class: "btn small", type: "button", text: "Connect wallet", onclick: act(() => Wallet.connect(), "Wallet connected") }));
+    return;
+  }
+
+  if (Wallet.wrongNetwork || !Wallet.info) {
+    fill(box,
+      h("strong", { text: "Wrong network" }),
+      h("p", { text: `Switch your wallet to ${cfg ? cfg.networkName : "the project's local chain"} to continue.` }),
+      h("button", { class: "btn small", type: "button", text: "Switch network", onclick: act(() => Wallet.ensureNetwork().then(() => Wallet.connect())) }));
+    return;
+  }
+
+  const info = Wallet.info;
+  fill(box,
+    h("div", { class: "wallet-row" }, h("strong", { text: "Wallet" }), chip(ROLE_LABEL[info.role] || "User"), info.frozen ? chip("Frozen", "bad") : null),
+    h("span", { class: "mono", text: shortAddr(Wallet.address), title: Wallet.address }),
+    h("div", { class: "wallet-row" }, h("span", { text: "Balance" }), h("b", { text: `${fmt(info.balance)} ${SYMBOL}` })),
+    h("div", { class: "wallet-row" }, h("span", { text: "Gas" }), h("span", { text: `${Number(info.ethBalance).toFixed(2)} ETH` })),
+    h("div", { class: "wallet-actions" },
+      cfg && cfg.faucetAmount && BigInt(info.balance) < 100n
+        ? h("button", { class: "btn small", type: "button", id: "faucet", text: "Get demo VKC", onclick: act(() => Wallet.faucet(), (d) => `${d.amount} VKC sent to your wallet`) })
+        : null,
+      h("button", { class: "btn ghost small", type: "button", text: "Add VKC to wallet", onclick: act(() => Wallet.addToken(), "Token request sent to your wallet") }),
+      h("button", { class: "btn ghost small", type: "button", text: "Disconnect", onclick: () => Wallet.disconnect() })
+    ));
+}
+
+Wallet.on("session", () => { renderWalletBox(); route(); });
+Wallet.on("info", renderWalletBox);
+
 window.addEventListener("hashchange", route);
-route();
+renderWalletBox();
+Wallet.autoReconnect().finally(() => Wallet.loadConfig().catch(() => {}).then(() => { renderWalletBox(); route(); }));
 pollStatus();
 setInterval(pollStatus, 6000);

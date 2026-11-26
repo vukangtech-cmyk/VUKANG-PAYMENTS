@@ -54,7 +54,7 @@ describe("VukangLedger", function () {
   describe("transfers", function () {
     it("moves balances for real and records the transfer", async function () {
       const { ledger, alice, bob } = await funded();
-      await expect(ledger.connect(alice).transfer(bob.address, 200, "Rent"))
+      await expect(ledger.connect(alice)["transfer(address,uint256,string)"](bob.address, 200, "Rent"))
         .to.emit(ledger, "Recorded");
       expect(await ledger.balanceOf(alice.address)).to.equal(4800n);
       expect(await ledger.balanceOf(bob.address)).to.equal(200n);
@@ -70,7 +70,7 @@ describe("VukangLedger", function () {
 
     it("rejects a transfer larger than the sender's balance", async function () {
       const { ledger, alice, bob } = await funded();
-      await expect(ledger.connect(alice).transfer(bob.address, 5001, "Too much"))
+      await expect(ledger.connect(alice)["transfer(address,uint256,string)"](bob.address, 5001, "Too much"))
         .to.be.revertedWithCustomError(ledger, "InsufficientBalance")
         .withArgs(5000, 5001);
       expect(await ledger.balanceOf(alice.address)).to.equal(5000n);
@@ -79,23 +79,23 @@ describe("VukangLedger", function () {
 
     it("rejects an account with no balance", async function () {
       const { ledger, bob, outsider } = await funded();
-      await expect(ledger.connect(outsider).transfer(bob.address, 1, "x"))
+      await expect(ledger.connect(outsider)["transfer(address,uint256,string)"](bob.address, 1, "x"))
         .to.be.revertedWithCustomError(ledger, "InsufficientBalance");
     });
 
     it("rejects zero amount, zero address and self transfer", async function () {
       const { ledger, alice, bob } = await funded();
-      await expect(ledger.connect(alice).transfer(bob.address, 0, "x")).to.be.revertedWithCustomError(ledger, "InvalidAmount");
-      await expect(ledger.connect(alice).transfer(ethers.ZeroAddress, 1, "x")).to.be.revertedWithCustomError(ledger, "InvalidRecipient");
-      await expect(ledger.connect(alice).transfer(alice.address, 1, "x")).to.be.revertedWithCustomError(ledger, "SelfTransfer");
+      await expect(ledger.connect(alice)["transfer(address,uint256,string)"](bob.address, 0, "x")).to.be.revertedWithCustomError(ledger, "InvalidAmount");
+      await expect(ledger.connect(alice)["transfer(address,uint256,string)"](ethers.ZeroAddress, 1, "x")).to.be.revertedWithCustomError(ledger, "InvalidRecipient");
+      await expect(ledger.connect(alice)["transfer(address,uint256,string)"](alice.address, 1, "x")).to.be.revertedWithCustomError(ledger, "SelfTransfer");
     });
   });
 
   describe("verification", function () {
     it("verifies records and the whole chain", async function () {
       const { ledger, alice, bob } = await funded();
-      await ledger.connect(alice).transfer(bob.address, 10, "a");
-      await ledger.connect(alice).transfer(bob.address, 20, "b");
+      await ledger.connect(alice)["transfer(address,uint256,string)"](bob.address, 10, "a");
+      await ledger.connect(alice)["transfer(address,uint256,string)"](bob.address, 20, "b");
 
       for (const id of [1, 2, 3]) expect(await ledger.verifyRecord(id)).to.equal(true);
       const [valid, broken] = await ledger.verifyChain();
@@ -112,7 +112,7 @@ describe("VukangLedger", function () {
 
     it("links each record to the previous hash and matches an off-chain recomputation", async function () {
       const { ledger, alice, bob } = await funded();
-      await ledger.connect(alice).transfer(bob.address, 10, "a");
+      await ledger.connect(alice)["transfer(address,uint256,string)"](bob.address, 10, "a");
 
       const r1 = await ledger.getRecord(1);
       const r2 = await ledger.getRecord(2);
@@ -125,7 +125,7 @@ describe("VukangLedger", function () {
 
     it("keeps the integrity hash unchanged when a record is flagged", async function () {
       const { ledger, alice, bob } = await funded();
-      await ledger.connect(alice).transfer(bob.address, 10, "a");
+      await ledger.connect(alice)["transfer(address,uint256,string)"](bob.address, 10, "a");
       const before = (await ledger.getRecord(2)).recordHash;
       await ledger.flag(2, "Manual review");
       expect((await ledger.getRecord(2)).recordHash).to.equal(before);
@@ -134,7 +134,7 @@ describe("VukangLedger", function () {
 
     it("pages through records", async function () {
       const { ledger, alice, bob } = await funded();
-      for (let i = 0; i < 4; i++) await ledger.connect(alice).transfer(bob.address, 1, `t${i}`);
+      for (let i = 0; i < 4; i++) await ledger.connect(alice)["transfer(address,uint256,string)"](bob.address, 1, `t${i}`);
       const page = await ledger.getRecords(1, 3);
       expect(page.length).to.equal(3);
       expect(page[0].id).to.equal(2n);
@@ -145,12 +145,12 @@ describe("VukangLedger", function () {
   describe("monitoring", function () {
     it("auto-flags transfers at or above the alert threshold", async function () {
       const { ledger, alice, bob } = await funded();
-      await expect(ledger.connect(alice).transfer(bob.address, THRESHOLD, "Big"))
+      await expect(ledger.connect(alice)["transfer(address,uint256,string)"](bob.address, THRESHOLD, "Big"))
         .to.emit(ledger, "Flagged").withArgs(2, alice.address, "LARGE_AMOUNT");
       const r = await ledger.getRecord(2);
       expect(r.flagged).to.equal(true);
       expect(r.flagReason).to.equal("LARGE_AMOUNT");
-      await ledger.connect(alice).transfer(bob.address, THRESHOLD - 1n, "Just under");
+      await ledger.connect(alice)["transfer(address,uint256,string)"](bob.address, THRESHOLD - 1n, "Just under");
       expect((await ledger.getRecord(3)).flagged).to.equal(false);
     });
 
@@ -158,13 +158,13 @@ describe("VukangLedger", function () {
       const { ledger, alice, bob, outsider } = await funded();
       await expect(ledger.connect(outsider).setAlertThreshold(5)).to.be.revertedWithCustomError(ledger, "NotOwner");
       await ledger.setAlertThreshold(50);
-      await ledger.connect(alice).transfer(bob.address, 50, "x");
+      await ledger.connect(alice)["transfer(address,uint256,string)"](bob.address, 50, "x");
       expect((await ledger.getRecord(2)).flagged).to.equal(true);
     });
 
     it("lets auditors flag a record once, and blocks everyone else", async function () {
       const { ledger, alice, bob, auditor, outsider } = await funded();
-      await ledger.connect(alice).transfer(bob.address, 10, "x");
+      await ledger.connect(alice)["transfer(address,uint256,string)"](bob.address, 10, "x");
       await expect(ledger.connect(auditor).flag(2, "r")).to.be.revertedWithCustomError(ledger, "NotAuditor");
       await ledger.setAuditor(auditor.address, true);
       await expect(ledger.connect(outsider).flag(2, "r")).to.be.revertedWithCustomError(ledger, "NotAuditor");
@@ -179,17 +179,52 @@ describe("VukangLedger", function () {
       await expect(ledger.connect(auditor).setFrozen(alice.address, true))
         .to.emit(ledger, "FrozenChanged").withArgs(alice.address, true, auditor.address);
 
-      await expect(ledger.connect(alice).transfer(bob.address, 1, "x"))
+      await expect(ledger.connect(alice)["transfer(address,uint256,string)"](bob.address, 1, "x"))
         .to.be.revertedWithCustomError(ledger, "AccountFrozen");
 
       await ledger.setFrozen(bob.address, true);
       await ledger.setFrozen(alice.address, false);
-      await expect(ledger.connect(alice).transfer(bob.address, 1, "x"))
+      await expect(ledger.connect(alice)["transfer(address,uint256,string)"](bob.address, 1, "x"))
         .to.be.revertedWithCustomError(ledger, "AccountFrozen");
 
       await ledger.setFrozen(bob.address, false);
-      await ledger.connect(alice).transfer(bob.address, 1, "x");
+      await ledger.connect(alice)["transfer(address,uint256,string)"](bob.address, 1, "x");
       expect(await ledger.balanceOf(bob.address)).to.equal(1n);
+    });
+  });
+  describe("wallet compatibility (ERC-20 subset)", function () {
+    it("exposes name, symbol, decimals, totalSupply and balanceOf", async function () {
+      const { ledger, alice } = await funded();
+      expect(await ledger.name()).to.equal("Vukang Credit");
+      expect(await ledger.symbol()).to.equal("VKC");
+      expect(await ledger.decimals()).to.equal(0n);
+      expect(await ledger.totalSupply()).to.equal(5000n);
+      expect(await ledger.balanceOf(alice.address)).to.equal(5000n);
+    });
+
+    it("accepts the plain transfer(to, amount) call that wallets send", async function () {
+      const { ledger, alice, bob } = await funded();
+      await expect(ledger.connect(alice)["transfer(address,uint256)"](bob.address, 300))
+        .to.emit(ledger, "Transfer").withArgs(alice.address, bob.address, 300)
+        .and.to.emit(ledger, "Recorded");
+      expect(await ledger.balanceOf(bob.address)).to.equal(300n);
+      const r = await ledger.getRecord(2);
+      expect(r.memo).to.equal("");
+      expect(await ledger.verifyRecord(2)).to.equal(true);
+    });
+
+    it("applies the same rules to the plain transfer", async function () {
+      const { ledger, alice, bob } = await funded();
+      await expect(ledger.connect(alice)["transfer(address,uint256)"](bob.address, 99999))
+        .to.be.revertedWithCustomError(ledger, "InsufficientBalance");
+      await ledger.connect(alice)["transfer(address,uint256)"](bob.address, THRESHOLD);
+      expect((await ledger.getRecord(2)).flagged).to.equal(true);
+    });
+
+    it("emits Transfer from the zero address when minting", async function () {
+      const { ledger, alice } = await deploy();
+      await expect(ledger.mint(alice.address, 10, "x"))
+        .to.emit(ledger, "Transfer").withArgs(ethers.ZeroAddress, alice.address, 10);
     });
   });
 });

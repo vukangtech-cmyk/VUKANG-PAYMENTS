@@ -81,7 +81,21 @@ body {
 .nav a:hover { background: var(--navy-soft); color: #fff; }
 .nav a[aria-current="page"] { background: var(--cobalt); color: #fff; }
 
-.chain-status { margin-top: auto; display: flex; align-items: center; gap: 10px; font-size: 13px; color: #9fb0e4; padding: 0 8px; }
+.wallet { margin-top: auto; background: var(--navy-soft); border-radius: 10px; padding: 14px; font-size: 13.5px; color: #c9d4f5; display: grid; gap: 8px; }
+.wallet strong { color: #fff; font-size: 14px; }
+.wallet p { margin: 0; color: #9fb0e4; }
+.wallet a { color: #fff; }
+.wallet .mono { color: #fff; font-size: 12px; }
+.wallet .wallet-row { display: flex; justify-content: space-between; gap: 10px; }
+.wallet .wallet-actions { display: grid; gap: 6px; margin-top: 2px; }
+.wallet .btn.small { width: 100%; }
+.wallet .btn.ghost { color: #fff; border-color: #6d7dff; }
+.wallet .btn.ghost:hover { background: var(--navy); }
+.wallet .chip { background: #2c3f77; color: #dfe6fb; }
+.wallet .chip.bad { background: #5b1f26; color: #ffd6d6; }
+.static-field { border: 1.5px solid var(--line); border-radius: 8px; padding: 10px 12px; background: #f8fafc; min-height: 44px; }
+.static-field .mono { color: var(--muted); display: block; }
+.chain-status { margin-top: 0; display: flex; align-items: center; gap: 10px; font-size: 13px; color: #9fb0e4; padding: 0 8px; }
 .dot { width: 9px; height: 9px; border-radius: 50%; background: #6c7aa6; flex: none; }
 .dot[data-state="ok"] { background: #3ddc97; }
 .dot[data-state="bad"] { background: #ff6b6b; }
@@ -253,6 +267,7 @@ tr.flag td:first-child { box-shadow: inset 4px 0 0 #e0a100; }
   .nav a { white-space: nowrap; }
   .nav { scrollbar-width: none; }
   .chain-status { margin: 0 0 0 auto; padding: 0; }
+  .wallet { order: 4; width: 100%; margin-top: 0; }
   main { padding-top: 24px; }
   .two, .split { grid-template-columns: 1fr; gap: 32px; }
 }
